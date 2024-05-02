@@ -149,7 +149,6 @@ class Tokenizer:
                 special_tokens[special] = int(special_idx)
             # read the merges
             for line in f:
-                print((line.strip()).split())
                 idx1, idx2 = map(int, line.split())
                 merges[(idx1, idx2)] = idx
                 idx += 1

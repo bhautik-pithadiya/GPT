@@ -1,6 +1,6 @@
 # NOTE: This file was automatically generated from:
 # /home/ksuser/Bhautik/GPT/tokenizer/base.py
-# DO NOT CHANGE DIRECTLY! 1714484764.9647036
+# DO NOT CHANGE DIRECTLY! 1714632944.2728596
 import unicodedata
 
 def get_stats(ids, count=None):
@@ -78,7 +78,7 @@ class Tokenizer:
     def save(self, file_prefix):
         model_file = file_prefix + '.model'
         with open(model_file, 'w') as f:
-            f.write('tokenizer v1')
+            f.write('tokenizer v1\n')
             f.write(f'{self.pattern}\n')
             f.write(f'{len(self.special_tokens)}\n')
             for (special, idx) in self.special_tokens.items():

@@ -1,3 +1,11 @@
 {
-    "files.autoSave": "afterDelay"
+    "files.autoSave": "afterDelay",
+    "python.testing.pytestArgs": [
+        "tokenizer"
+    ],
+    "python.testing.unittestEnabled": false,
+    "python.testing.pytestEnabled": true,
+    "cSpell.words": [
+        "embd"
+    ]
 }

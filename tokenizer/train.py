@@ -13,7 +13,7 @@ GptTokenizer = ultraimport('gpt.py','GptTokenizer',recurse=True)
 
 
 PATH = 'models/'
-VOCAB_SIZE = 8000
+VOCAB_SIZE = 2000
 # open some text and train a vocab of 512 tokens
 text = open("./wiki_dataset.txt", "r", encoding="utf-8").read()
 
