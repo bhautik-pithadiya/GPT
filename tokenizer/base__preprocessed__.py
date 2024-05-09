@@ -1,6 +1,6 @@
 # NOTE: This file was automatically generated from:
 # /home/ksuser/Bhautik/GPT/tokenizer/base.py
-# DO NOT CHANGE DIRECTLY! 1714632944.2728596
+# DO NOT CHANGE DIRECTLY! 1715233435.713535
 import unicodedata
 
 def get_stats(ids, count=None):
@@ -113,7 +113,6 @@ class Tokenizer:
                 (special, special_idx) = f.readline().strip().split()
                 special_tokens[special] = int(special_idx)
             for line in f:
-                print(line.strip().split())
                 (idx1, idx2) = map(int, line.split())
                 merges[idx1, idx2] = idx
                 idx += 1

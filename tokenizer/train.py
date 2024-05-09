@@ -7,8 +7,8 @@ import os
 import time
 # from .base import Tokenizer
 # from .gpt import GptTokenizer
-import ultraimport
 import pandas as pd
+import ultraimport
 
 # Tokenizer = ultraimport('base.py', 'Tokenizer')
 GptTokenizer = ultraimport('gpt.py','GptTokenizer',recurse=True)
@@ -31,6 +31,10 @@ for name in filenames:
     df = pd.read_csv(dataset_path+name)
     for x in df['Review']:
         text += x + '\n'
+
+# saving the dataset in a single file
+# with open('dataset_v1.txt','w+') as f:
+#     f.write(text)
 
 # create a directory for models, so we don't pollute the current directory
 

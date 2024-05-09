@@ -77,9 +77,6 @@ class GPTLanguageModel(nn.Module):
             idx = torch.cat((idx, idx_next), dim=1) # (B, T+1)
         return idx
 
-def load_dataset():
-    
-
 if __name__ == "__main__":
     # hyperparameters
     batch_size = 64 # how many independent sequences will we process in parallel?
