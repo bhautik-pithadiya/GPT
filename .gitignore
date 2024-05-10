@@ -4,3 +4,4 @@ NOLAN_wiki/GoogleNews-vectors-negative300.bin.gz
 .vscode
 .ipynb_checkpoints
 /data/dataset_v1.csv
+/data/tokenized_data_v1.csv

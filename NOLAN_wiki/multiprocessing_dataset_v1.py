@@ -1,6 +1,6 @@
 import pandas as pd
 import concurrent.futures
-
+from tqdm import tqdm
 
 
 def load_data():
@@ -37,7 +37,7 @@ def main():
 
     # Define block_size and number of processes
     block_size = 256
-    num_processes = 10
+    num_processes = 45
 
     # Split the list into chunks for parallel processing
     print('********** Splitting into chunks **************')
@@ -48,10 +48,15 @@ def main():
     print('************ Parallel Processing ***************')
     with concurrent.futures.ProcessPoolExecutor() as executor:
         futures = []
-        for chunk in chunks:
-            futures.append(executor.submit(process_data, chunk, block_size))
+        with tqdm(total=len(chunks)) as pbar:
+            for chunk in chunks:
+                futures.append(executor.submit(process_data, chunk, block_size))
+                pbar.update(1)
 
         # Gather results from all futures
+        data_dfs = []
+        for future in concurrent.futures.as_completed(futures):
+            data_dfs.append(future.result())
         data_dfs = [future.result() for future in concurrent.futures.as_completed(futures)]
 
     # Concatenate results from all chunks

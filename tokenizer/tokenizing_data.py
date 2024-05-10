@@ -17,7 +17,7 @@ def tokenize_data(data):
 DATA = pd.read_csv('./data/dataset_v1.csv')  # Your dataset here
 
 # Define the number of processes
-num_processes = 11  # Choose the number of processes
+num_processes =   # Choose the number of processes
 
 # Create a new DataFrame to store tokenized data
 tokenized_data = pd.DataFrame(columns=["X", "y"])
@@ -36,11 +36,10 @@ chunks = [DATA.iloc[i:i+chunk_size] for i in range(0, len(DATA), chunk_size)]
 # Process each chunk in parallel using ProcessPoolExecutor
 with concurrent.futures.ProcessPoolExecutor() as executor:
     futures = []
-    # Use tqdm to create a progress bar
-    with tqdm(total=len(chunks)) as pbar:
-        for chunk in chunks:
-            futures.append(executor.submit(tokenize_chunk, chunk))
-            pbar.update(1)  # Update progress bar for each chunk submitted
+
+    for chunk in chunks:
+        futures.append(executor.submit(tokenize_chunk, chunk))
+
 
     # Gather results from all futures
     tokenized_chunks = [future.result() for future in concurrent.futures.as_completed(futures)]
@@ -50,4 +49,5 @@ tokenized_data = pd.concat(tokenized_chunks)
 
 # Now you have your final DataFrame with tokenized data
 # print(tokenized_data)
-tokenized_data.to_csv('./data/tokenized_data_v1.csv')
+print('Saving Data')
+tokenized_data.to_csv('./data/tokenized_data_v1.csv',index=False)
