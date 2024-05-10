@@ -17,7 +17,7 @@ def tokenize_data(data):
 DATA = pd.read_csv('./data/dataset_v1.csv')  # Your dataset here
 
 # Define the number of processes
-num_processes =   # Choose the number of processes
+num_processes =  45 # Choose the number of processes
 
 # Create a new DataFrame to store tokenized data
 tokenized_data = pd.DataFrame(columns=["X", "y"])
