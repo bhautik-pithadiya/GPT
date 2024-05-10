@@ -168,7 +168,7 @@ model = model.to(device)
 optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
 
 print('Loading Dataset')
-DATA = pd.read_csv('./data/dataset_v1.csv')
+DATA = pd.read_csv('./data/tokenized_data_v1.csv')
 
 def get_batch(split,counter,batch_size):
     
@@ -180,17 +180,19 @@ def get_batch(split,counter,batch_size):
 
 @torch.no_grad()
 def estimate_loss(model,eval_iters):
+    counter = 0
     out = {}
     model.eval()
     for split in ['train','val']:
         losses = torch.zeros(eval_iters)
         
         for k in tqdm(range(eval_iters)):
-            X,y = get_batch(split)
+            X,y = get_batch(split,counter,batch_size)
             
             logits , loss = model(X,y)
             del X,y
             losses[k] = loss.item()
+            counter+=batch_size
     
         out[split] = losses.mean()
     model.train()
@@ -198,50 +200,12 @@ def estimate_loss(model,eval_iters):
     return out
 
 
-print('Laoding Tokenizer')
-tokenizer = GptTokenizer()
-tokenizer.load(tokenizer_path)
+TRAIN_DATA,VAL_DATA = train_test_split(DATA,test_size=0.3,shuffle=True, random_state=42)
 
-tokenized_data = pd.DataFrame(columns=["X", "y"])
+size_of_data = len(DATA)
+del DATA
 
-def tokenize_data(data):
-    return tokenizer.encode(data)
-
-
-print('Tokenizing Dataset ')
-# tokenized_data['X'] = DATA['X'].apply(lambda x: tokenize_data(x))
-# tokenized_data['y'] = DATA['y'].apply(lambda x : tokenize_data(x))
-num_processes = 12
-def tokenize_chunk(chunk):
-    tokenized_chunk = pd.DataFrame(columns=["X", "y"])
-    tokenized_chunk['X'] = chunk['X'].apply(tokenize_data)
-    tokenized_chunk['y'] = chunk['y'].apply(tokenize_data)
-    return tokenized_chunk
-
-# Split the dataset into chunks for parallel processing
-chunk_size = len(DATA) // num_processes
-chunks = [DATA.iloc[i:i+chunk_size] for i in range(0, len(DATA), chunk_size)]
-
-# Process each chunk in parallel using ProcessPoolExecutor
-with concurrent.futures.ProcessPoolExecutor() as executor:
-    futures = []
-    # Use tqdm to create a progress bar
-    with tqdm(total=len(chunks)) as pbar:
-        for chunk in chunks:
-            futures.append(executor.submit(tokenize_chunk, chunk))
-            pbar.update(1)
-
-    # Gather results from all futures
-    tokenized_chunks = [future.result() for future in concurrent.futures.as_completed(futures)]
-
-# Concatenate results from all chunks
-tokenized_data = pd.concat(tokenized_chunks)
-
-TRAIN_DATA,VAL_DATA = train_test_split(tokenized_data,test_size=0.3,shuffle=True, random_state=42)
-
-del DATA,tokenized_data
-
-ITERS = len(tokenize_data) // batch_size
+ITERS = size_of_data // batch_size
     
 EPOCHS = 10
 

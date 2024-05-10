@@ -17,7 +17,7 @@ def tokenize_data(data):
 DATA = pd.read_csv('./data/dataset_v1.csv')  # Your dataset here
 
 # Define the number of processes
-num_processes =  45 # Choose the number of processes
+num_processes =  12 # Choose the number of processes
 
 # Create a new DataFrame to store tokenized data
 tokenized_data = pd.DataFrame(columns=["X", "y"])
@@ -50,4 +50,4 @@ tokenized_data = pd.concat(tokenized_chunks)
 # Now you have your final DataFrame with tokenized data
 # print(tokenized_data)
 print('Saving Data')
-tokenized_data.to_csv('./data/tokenized_data_v1.csv',index=False)
+tokenized_data.to_csv('./data/tokenized_data_v1.csv',index=False,sep='|')
