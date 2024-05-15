@@ -6,31 +6,31 @@ The whole thing runs in ~25 seconds on my laptop.
 import os
 import time
 # from .base import Tokenizer
-# from .gpt import GptTokenizer
+from .gpt import GptTokenizer
 import pandas as pd
 import ultraimport
 
 # Tokenizer = ultraimport('base.py', 'Tokenizer')
-GptTokenizer = ultraimport('gpt.py','GptTokenizer',recurse=True)
+# GptTokenizer = ultraimport('gpt.py','GptTokenizer',recurse=True)
 
 
-PATH = 'models/'
-VOCAB_SIZE = 10000
+PATH = 'models/nolan/'
+VOCAB_SIZE = 1000
 # open some text and train a vocab of 512 tokens
 # loading dataset
-dataset_path = '../NOLAN_wiki/imdb/preprocessed_dataset/'
-filenames = os.listdir(dataset_path)
-print(filenames)
+# dataset_path = '../NOLAN_wiki/imdb/preprocessed_dataset/'
+# filenames = os.listdir(dataset_path)
+# print(filenames)
 
 # Wiki dataset
-text = open("./wiki_dataset.txt", "r", encoding="utf-8").read()
+text = open("../data/dataset_v1.txt", "r", encoding="utf-8").read()
 
 # IMDB Reviews
 
-for name in filenames:
-    df = pd.read_csv(dataset_path+name)
-    for x in df['Review']:
-        text += x + '\n'
+# for name in filenames:
+#     df = pd.read_csv(dataset_path+name)
+#     for x in df['Review']:
+#         text += x + '\n'
 
 # saving the dataset in a single file
 # with open('dataset_v1.txt','w+') as f:

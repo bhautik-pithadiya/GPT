@@ -2,15 +2,19 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 from tqdm import tqdm
+
 from sklearn.model_selection import train_test_split
+from torch.nn.utils.rnn import pad_sequence
+from torch.utils.data import Dataset, DataLoader
+from tokenizer.Dataset import CustomDataset
+from tokenizer.gpt import GptTokenizer
+
 import pickle
 from tqdm import tqdm
 import pandas as pd
 
-from tokenizer.gpt import GptTokenizer
-import concurrent.futures
 
-tokenizer_path = './tokenizer/models/gpt.model'
+tokenizer_path = './tokenizer/models/nolan/gpt.model'
 batch_size = 64 # how many independent sequences will we process in parallel?
 block_size = 256 # what is the maximum context length for predictions?
 max_iters = 100
@@ -168,29 +172,23 @@ model = model.to(device)
 optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
 
 print('Loading Dataset')
-DATA = pd.read_csv('./data/tokenized_data_v1.csv')
+DATA = pd.read_csv('./data/dataset_v2.csv')
 
-def get_batch(split,counter,batch_size):
-    
-    data = TRAIN_DATA if split == 'train' else VAL_DATA
-    x = torch.stack([data['X'].iloc[i]] for i in range(counter,counter+batch_size))
-    y = torch.stack([data['y'].iloc[i]] for i in range(counter,counter+batch_size))
-    x,y = x.to(device),y.to(device)
-    return x,y
+print('Loading Tokenzier')
+tokenizer = GptTokenizer()
+tokenizer.load(tokenizer_path)
+
 
 @torch.no_grad()
-def estimate_loss(model,eval_iters):
+def estimate_loss(model,eval_iters,X,y):
     counter = 0
     out = {}
     model.eval()
     for split in ['train','val']:
         losses = torch.zeros(eval_iters)
         
-        for k in tqdm(range(eval_iters)):
-            X,y = get_batch(split,counter,batch_size)
-            
+        for k in tqdm(range(eval_iters)):            
             logits , loss = model(X,y)
-            del X,y
             losses[k] = loss.item()
             counter+=batch_size
     
@@ -199,30 +197,42 @@ def estimate_loss(model,eval_iters):
     
     return out
 
-
+print('Train Test Split')
 TRAIN_DATA,VAL_DATA = train_test_split(DATA,test_size=0.3,shuffle=True, random_state=42)
 
-size_of_data = len(DATA)
-del DATA
+def collate_fn(batch):
+    inputs, targets = zip(*batch)
+    input_batch = pad_sequence(inputs, batch_first=True, padding_value=10001)
+    target_batch = pad_sequence(targets, batch_first=True, padding_value=10001)
+    return input_batch, target_batch
 
-ITERS = size_of_data // batch_size
-    
+print('Custom Dataset')
+train_dataset = CustomDataset(TRAIN_DATA, tokenizer, max_length=block_size)
+val_dataset = CustomDataset(VAL_DATA, tokenizer, block_size)
+
+print('DataLoader')
+train_dataloader = DataLoader(train_dataset,batch_size=batch_size, shuffle=True,collate_fn=collate_fn)
+val_dataloader = DataLoader(val_dataset,batch_size=batch_size, shuffle=True,collate_fn=collate_fn)    
+
+del DATA,TRAIN_DATA,VAL_DATA
+
 EPOCHS = 10
-
-for epoch in tqdm(range(EPOCHS)):
-    for iter in range(ITERS):
-        
-        if iter % eval_interval == 0 or iter == max_iters - 1:
-            losses = estimate_loss(model,eval_iters=eval_iters)
+iter = 0
+for epoch in range(EPOCHS):
+    iter = 0 if epoch==0 else iter
+    for input_batch,target_batch in train_dataloader:
+        X,y = input_batch,target_batch
+        X,y = X.to(device),y.to(device)
+        if iter% eval_interval == 0 or iter == max_iters - 1:
+            losses = estimate_loss(model,eval_iters,X,y)
             print(f"step {iter}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
-        # sample a batch of data
-        xb, yb = get_batch('train')
-
-        # evaluate the loss
-        logits, loss = model(xb, yb)
+    
+        logits,loss  = model(X,y)
+        del X,y
         optimizer.zero_grad(set_to_none=True)
         loss.backward()
         optimizer.step()
+        
         
         # if (iter+1) % checkpoint_steps == 0:
         #     with open(f'./checkpoints/chkpt_{iter+1}.pkl','wb') as f:

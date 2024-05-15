@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
+from torch.nn.utils.rnn import pad_sequence
+from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 import pandas as pd
 import pickle
@@ -8,10 +10,12 @@ import pickle
 from sklearn.model_selection import train_test_split
 from transformer.transformer import GPTLanguageModel
 from tokenizer.gpt import GptTokenizer
+from tokenizer.Dataset import CustomDataset
 
-# print('****** Loading Dataset *********')
-# DATA = pd.read_csv('./data/dataset_v1.csv')
-# TRAIN_DATA,VAL_DATA = train_test_split(DATA,test_size=0.3,shuffle=True, random_state=42)
+print('****** Loading Dataset *********')
+DATA = pd.read_csv('./data/dataset_v2.csv')
+TRAIN_DATA,VAL_DATA = train_test_split(DATA,test_size=0.3,shuffle=True, random_state=42)
+
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 def load_model(n_embd = 64,
@@ -37,27 +41,20 @@ def load_model(n_embd = 64,
 
 def load_tokenizer(tokenizer_path):
     tokenizer = GptTokenizer()
-    tokenizer.load(tokenier_path)
+    tokenizer.load(tokenizer_path)
     
     return tokenizer
 
-def get_batch(split,counter,batch_size):
-    
-    data = TRAIN_DATA if split == 'train' else VAL_DATA
-    x = torch.stack([data['X'].iloc[i]] for i in range(counter,counter+batch_size))
-    y = torch.stack([data['y'].iloc[i]] for i in range(counter,counter+batch_size))
-    x,y = x.to(device),y.to(device)
-    return x,y
 
 @torch.no_grad()
-def estimate_loss(model,eval_iters):
+def estimate_loss(model,eval_iters,input_batch,target_batch):
     out = {}
     model.eval()
     for split in ['train','val']:
         losses = torch.zeros(eval_iters)
         
         for k in tqdm(range(eval_iters)):
-            X,y = get_batch(split)
+            X,y = input_batch,target_batch
             
             logits , loss = model(X,y)
             del X,y
@@ -97,38 +94,55 @@ if __name__ == "__main__":
     print('******** Loading Tokenizer **********')
     tokenizer = load_tokenizer(T_path)
     
-    def tokenize_data(data):
-        return tokenizer.encode(data)
-    
-    tokenized_data = pd.DataFrame(columns=["X", "y"])
-    
-    print('************ Tokenizing Dataset *************')
-    tokenized_data['X'] = DATA['X'].apply(lambda x: tokenize_data(x))
-    tokenized_data['y'] = DATA['y'].apply(lambda x : tokenize_data(x))
-    
-    ITERS = len(tokenize_data) // batch_size
-    
-    EPOCHS = 10
-    
-    for epoch in tqdm(range(EPOCHS)):
-        for iter in range(ITERS):
-            
-            if iter % eval_interval == 0 or iter == max_iters - 1:
-                losses = estimate_loss(model,eval_iters=eval_iters)
-                print(f"step {iter}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
-            # sample a batch of data
-            xb, yb = get_batch('train')
+    def collate_fn(batch):
+        inputs, targets = zip(*batch)
+        input_batch = pad_sequence(inputs, batch_first=True, padding_value=10001)
+        target_batch = pad_sequence(targets, batch_first=True, padding_value=10001)
+        return input_batch, target_batch
 
-            # evaluate the loss
-            logits, loss = model(xb, yb)
+    train_dataset = CustomDataset(TRAIN_DATA, tokenizer, max_length=block_size)
+    val_dataset = CustomDataset(VAL_DATA, tokenizer, block_size)
+    
+    train_dataloader = DataLoader(train_dataset,batch_size=batch_size, shuffle=True,collate_fn=collate_fn)
+    val_dataloader = DataLoader(val_dataset,batch_size=batch_size, shuffle=True,collate_fn=collate_fn)    
+    
+    
+    
+    # ITERS = len(tokenize_data) // batch_size
+    EPOCHS = 10
+    iter = 0
+    for epoch in EPOCHS:
+        iter = 0 if epoch==0 else iter
+        for input_batch,target_batch in train_dataloader:
+            
+            if iter% eval_interval == 0 or iter == max_iters - 1:
+                losses = estimate_loss(model,eval_iters,input_batch,target_batch)
+                print(f"step {iter}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
+        
+            logits,loss  = model(input_batch,target_batch)
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
             optimizer.step()
+    
+    # for epoch in tqdm(range(EPOCHS)):
+    #     for iter in range(ITERS):
             
-            if (iter+1) % checkpoint_steps == 0:
-                with open(f'./checkpoints/chkpt_{iter+1}.pkl','wb') as f:
-                    pickle.dump(model,f)
-                print('Checkpoints Saved')
+    #         if iter % eval_interval == 0 or iter == max_iters - 1:
+    #             losses = estimate_loss(model,eval_iters=eval_iters)
+    #             print(f"step {iter}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
+    #         # sample a batch of data
+    #         xb, yb = get_batch('train')
+
+    #         # evaluate the loss
+    #         logits, loss = model(xb, yb)
+    #         optimizer.zero_grad(set_to_none=True)
+    #         loss.backward()
+    #         optimizer.step()
+            
+    #         if (iter+1) % checkpoint_steps == 0:
+    #             with open(f'./checkpoints/chkpt_{iter+1}.pkl','wb') as f:
+    #                 pickle.dump(model,f)
+    #             print('Checkpoints Saved')
             
     
     

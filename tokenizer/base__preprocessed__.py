@@ -1,7 +1,8 @@
 # NOTE: This file was automatically generated from:
 # /home/ksuser/Bhautik/GPT/tokenizer/base.py
-# DO NOT CHANGE DIRECTLY! 1715233435.713535
+# DO NOT CHANGE DIRECTLY! 1715778989.3968666
 import unicodedata
+import torch
 
 def get_stats(ids, count=None):
     """
@@ -12,7 +13,7 @@ def get_stats(ids, count=None):
         counts[pair] = counts.get(pair, 0) + 1
     return counts
 
-def merge(ids, pair, idx):
+def merge_orignial(ids, pair, idx):
     """
     In the list of integers(ids), replace all consecutive occurrence 
     of pair with a new token idx
@@ -30,6 +31,32 @@ def merge(ids, pair, idx):
             newids.append(ids[i])
             i += 1
     return newids
+
+def merge(ids, pair, idx: int):
+    """
+    In the list of integers(ids), replace all consecutive occurrence 
+    of pair with a new token idx
+    Example: id = [1,2,3,1,2]
+    so let the pair be (1,2), replacing it with new id as 4 which is idx.
+    therefore, new id - [4,3,4]
+    """
+    print(ids)
+    pairs = torch.stack((ids[:-1], ids[1:]), dim=1)
+    is_pair = (pairs == pair).all(axis=1)
+    false_tensor = torch.tensor([False], dtype=torch.bool, device=ids.device)
+    is_pair_i = torch.cat((is_pair, false_tensor))
+    is_pair_j = is_pair_i.roll(1)
+    while True:
+        is_overlap = (is_pair_i & is_pair_j).any()
+        if not is_overlap:
+            break
+        is_first = (is_pair_i & is_pair_j).int().diff() == 1
+        is_first = torch.cat((false_tensor, is_first))
+        is_pair_i &= ~is_first
+        is_pair_j = is_pair_i.roll(1)
+    ids[is_pair_i] = idx
+    ids = ids[~is_pair_j]
+    return ids
 
 def replace_control_characters(s: str) -> str:
     """
