@@ -8,6 +8,7 @@ from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import Dataset, DataLoader
 from tokenizer.Dataset import CustomDataset
 from tokenizer.gpt import GptTokenizer
+import torch.multiprocessing as mp
 
 import pickle
 from tqdm import tqdm
@@ -15,7 +16,7 @@ import pandas as pd
 
 
 tokenizer_path = './tokenizer/models/nolan/gpt.model'
-batch_size = 64 # how many independent sequences will we process in parallel?
+batch_size = 32 # how many independent sequences will we process in parallel?
 block_size = 256 # what is the maximum context length for predictions?
 max_iters = 100
 eval_interval = 50
@@ -25,9 +26,9 @@ eval_iters = 200
 n_embd = 64
 n_head = 6
 n_layer = 6
-dropout = 0.2
+dropout = 0.2 
 checkpoint_steps = 500
-vocab_size = 10000
+vocab_size = 10002
 
 
 class Head(nn.Module):
@@ -165,76 +166,112 @@ class GPTLanguageModel(nn.Module):
             idx = torch.cat((idx, idx_next), dim=1) # (B, T+1)
         return idx
 
-print("Loading Model")
-model = GPTLanguageModel()
-model = model.to(device)
-
-optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
-
 print('Loading Dataset')
 DATA = pd.read_csv('./data/dataset_v2.csv')
 
 print('Loading Tokenzier')
 tokenizer = GptTokenizer()
 tokenizer.load(tokenizer_path)
+special_tokens = {
+    '<eos>' : 10000,
+    '<pad>': 10001
+}
+tokenizer.register_special_tokens(special_tokens)
 
 
-@torch.no_grad()
-def estimate_loss(model,eval_iters,X,y):
-    counter = 0
-    out = {}
-    model.eval()
-    for split in ['train','val']:
-        losses = torch.zeros(eval_iters)
-        
-        for k in tqdm(range(eval_iters)):            
-            logits , loss = model(X,y)
-            losses[k] = loss.item()
-            counter+=batch_size
-    
-        out[split] = losses.mean()
-    model.train()
-    
-    return out
 
 print('Train Test Split')
 TRAIN_DATA,VAL_DATA = train_test_split(DATA,test_size=0.3,shuffle=True, random_state=42)
-
-def collate_fn(batch):
-    inputs, targets = zip(*batch)
-    input_batch = pad_sequence(inputs, batch_first=True, padding_value=10001)
-    target_batch = pad_sequence(targets, batch_first=True, padding_value=10001)
-    return input_batch, target_batch
 
 print('Custom Dataset')
 train_dataset = CustomDataset(TRAIN_DATA, tokenizer, max_length=block_size)
 val_dataset = CustomDataset(VAL_DATA, tokenizer, block_size)
 
 print('DataLoader')
-train_dataloader = DataLoader(train_dataset,batch_size=batch_size, shuffle=True,collate_fn=collate_fn)
-val_dataloader = DataLoader(val_dataset,batch_size=batch_size, shuffle=True,collate_fn=collate_fn)    
+torch.set_num_threads(10)
+train_dataloader = DataLoader(train_dataset,batch_size=batch_size, shuffle=True)
+val_dataloader = DataLoader(val_dataset,batch_size=batch_size, shuffle=True)    
 
 del DATA,TRAIN_DATA,VAL_DATA
 
-EPOCHS = 10
-iter = 0
-for epoch in range(EPOCHS):
-    iter = 0 if epoch==0 else iter
-    for input_batch,target_batch in train_dataloader:
-        X,y = input_batch,target_batch
-        X,y = X.to(device),y.to(device)
-        if iter% eval_interval == 0 or iter == max_iters - 1:
-            losses = estimate_loss(model,eval_iters,X,y)
-            print(f"step {iter}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
+
+@torch.no_grad()
+def estimate_loss(model,eval_iters):
+    counter = 0
+    out = {}
+    model.eval()
     
-        logits,loss  = model(X,y)
-        del X,y
+    losses = torch.zeros(eval_iters)
+    k = 0
+    for input_batch, target_batch in tqdm(val_dataloader, total=eval_iters, desc=f"Estimating loss for val"):
+        if k==eval_iters:
+            break
+        logits , loss = model(input_batch,target_batch)
+        losses[k] = loss.item()
+        k+=1
+
+    out = losses.mean()
+    
+    model.train()
+    
+    return out
+def train_epoch(epoch,iter):
+    losses = {}
+    train_loss = torch.zeros(len(train_dataloader))
+    iter = 0 if epoch==0 else iter
+    # print(train_dataloader.is_cuda)
+    k=0
+    for input_batch,target_batch in train_dataloader:
+        print(f'Batch {iter+1}')
+        
+    
+        logits,loss  = model(input_batch,target_batch)
+        train_loss[k] = loss.item()
         optimizer.zero_grad(set_to_none=True)
         loss.backward()
-        optimizer.step()
+        optimizer.step()      
+        iter+=1
+        k+=1
+        losses['train'] = train_loss.mean()
+        if iter% eval_interval == 0 or iter == max_iters - 1:
+            losses['val'] = estimate_loss(model,eval_iters)
+            print(f"step {iter}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
+    
+    # if (iter+1) % checkpoint_steps == 0:
+    #     with open(f'./checkpoints/chkpt_{iter+1}.pkl','wb') as f:
+    #         pickle.dump(model,f)
+    #     print('Checkpoints Saved')
+
+
+def train(model):
+    EPOCHS = 10
+    iter = 0
+
+    for epoch in range(EPOCHS):
+        print('In the training loop')
+        train_epoch(epoch,iter)
         
         
-        # if (iter+1) % checkpoint_steps == 0:
-        #     with open(f'./checkpoints/chkpt_{iter+1}.pkl','wb') as f:
-        #         pickle.dump(model,f)
-        #     print('Checkpoints Saved')
+
+if __name__ == "__main__":
+    print("Loading Model")
+    model = GPTLanguageModel()
+    model = model.to(device)
+
+    optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
+    num_process = 4
+    print('Model Sharing')
+    # model.share_memory()
+    print('Model sharing complete')
+    EPOCHS = 10
+    # Multi Processing
+    # processes = []
+    # for rank in range(num_process):
+    #     print('In the loop')
+    #     p = mp.Process(target=train,args=(model,))
+    #     p.start()
+    #     processes.append(p)
+    
+    # for p in processes:
+    #     p.join()
+    train(model)

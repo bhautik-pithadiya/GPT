@@ -46,7 +46,6 @@ def merge(ids, pair,idx:int):
     '''
     
     # create a mask for the first element i of every matching pair (i,j)
-    print(ids)
     pairs = torch.stack((ids[:-1],ids[1:]),dim =1)
     is_pair = (pairs == pair).all(axis=1)
     false_tensor = torch.tensor([False],dtype = torch.bool, device = ids.device)

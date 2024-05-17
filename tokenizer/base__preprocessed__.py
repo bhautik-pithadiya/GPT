@@ -1,6 +1,6 @@
 # NOTE: This file was automatically generated from:
 # /home/ksuser/Bhautik/GPT/tokenizer/base.py
-# DO NOT CHANGE DIRECTLY! 1715778989.3968666
+# DO NOT CHANGE DIRECTLY! 1715853810.1277623
 import unicodedata
 import torch
 
@@ -40,7 +40,6 @@ def merge(ids, pair, idx: int):
     so let the pair be (1,2), replacing it with new id as 4 which is idx.
     therefore, new id - [4,3,4]
     """
-    print(ids)
     pairs = torch.stack((ids[:-1], ids[1:]), dim=1)
     is_pair = (pairs == pair).all(axis=1)
     false_tensor = torch.tensor([False], dtype=torch.bool, device=ids.device)

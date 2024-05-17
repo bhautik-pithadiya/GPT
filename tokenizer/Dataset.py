@@ -69,35 +69,37 @@ import torch
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import Dataset, DataLoader
 
-class CustomDataset(Dataset):
+class  CustomDataset(Dataset):
     def __init__(self, data, tokenizer, max_length):
         self.data = data
         self.tokenizer = tokenizer
         self.max_length = max_length
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     def __len__(self):
         return len(self.data)
 
     def __getitem__(self, idx):
         text = self.data.iloc[idx]
-        # print(text)
         input_tokens = text.Text.split(' ')
         input_token = input_tokens[:-1] # Leave one position for the EOS token
         input_ids = self.tokenizer.encode(" ".join(tokens for tokens in input_token))
-        # print(input_ids)
         
         # Target sequence (shifted by one)
         target_tokens = input_tokens[1:]
         target_ids = self.tokenizer.encode(" ".join(tokens for tokens in target_tokens))
 
-        input_ids_tensor = torch.tensor(input_ids, dtype=torch.long)
-        target_ids_tensor = torch.tensor(target_ids, dtype=torch.long)
+        # Ensure input and target sequences are the same length
+        input_ids += [special_tokens['<pad>']] * (self.max_length - len(input_ids))
+        target_ids += [special_tokens['<pad>']] * (self.max_length - len(target_ids))
+        
+        input_ids_tensor = torch.tensor(input_ids, dtype=torch.long,device=self.device)
+        target_ids_tensor = torch.tensor(target_ids, dtype=torch.long, device=self.device)
 
+        # input_ids_tensor = input_ids
+        # target_ids_tensor = target_ids
+        
         return input_ids_tensor, target_ids_tensor
 
-def collate_fn(batch):
-    inputs, targets = zip(*batch)
-    input_batch = pad_sequence(inputs, batch_first=True, padding_value=10001)
-    target_batch = pad_sequence(targets, batch_first=True, padding_value=10001)
-    return input_batch, target_batch
+
 
