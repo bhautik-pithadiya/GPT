@@ -4,9 +4,9 @@ from tqdm import tqdm
 import ultraimport
 import torch
 
-GptTokenizer = ultraimport('tokenizer/gpt.py','GptTokenizer',recurse=True)
-
-tokenizer = GptTokenizer()
+# GptTokenizer = ultraimport('tokenizer/gpt.py','GptTokenizer',recurse=True)
+from tokenizer.gpt import RegexTokenizer
+tokenizer = RegexTokenizer()
 tokenizer.load('./tokenizer/models/nolan/gpt.model')
 special_tokens = {
     '<eos>' : 10000,
@@ -81,17 +81,21 @@ class  CustomDataset(Dataset):
 
     def __getitem__(self, idx):
         text = self.data.iloc[idx]
-        input_tokens = text.Text.split(' ')
-        input_token = input_tokens[:-1] # Leave one position for the EOS token
-        input_ids = self.tokenizer.encode(" ".join(tokens for tokens in input_token))
+        # print(text)
+        # input_tokens = text.Text.split(' ')
+        # input_token = input_tokens[:-1] # Leave one position for the EOS token
+        # input_ids = self.tokenizer.encode(" ".join(tokens for tokens in input_token))
         
-        # Target sequence (shifted by one)
-        target_tokens = input_tokens[1:]
-        target_ids = self.tokenizer.encode(" ".join(tokens for tokens in target_tokens))
+        # # Target sequence (shifted by one)
+        # target_tokens = input_tokens[1:]
+        # target_ids = self.tokenizer.encode(" ".join(tokens for tokens in target_tokens))
 
-        # Ensure input and target sequences are the same length
-        input_ids += [special_tokens['<pad>']] * (self.max_length - len(input_ids))
-        target_ids += [special_tokens['<pad>']] * (self.max_length - len(target_ids))
+        # # Ensure input and target sequences are the same length
+        # input_ids += [special_tokens['<pad>']] * (self.max_length - len(input_ids))
+        # target_ids += [special_tokens['<pad>']] * (self.max_length - len(target_ids))
+        # print(text['X'])
+        input_ids = text['X']
+        target_ids = text['y']
         
         input_ids_tensor = torch.tensor(input_ids, dtype=torch.long,device=self.device)
         target_ids_tensor = torch.tensor(target_ids, dtype=torch.long, device=self.device)
@@ -101,5 +105,12 @@ class  CustomDataset(Dataset):
         
         return input_ids_tensor, target_ids_tensor
 
-
-
+def collate_fn(batch):
+    # Separate the input and target sequences
+    input_ids, target_ids = zip(*batch)
+    
+    # Pad the sequences
+    input_ids_padded = pad_sequence(input_ids, batch_first=True, padding_value=special_tokens['<pad>'])
+    target_ids_padded = pad_sequence(target_ids, batch_first=True, padding_value=special_tokens['<pad>'])
+    
+    return input_ids_padded, target_ids_padded

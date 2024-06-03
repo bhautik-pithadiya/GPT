@@ -6,14 +6,10 @@ import json
 from sklearn.model_selection import train_test_split
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import Dataset, DataLoader
-from Dataset import CustomDataset
-from tokenizer.gpt import RegexTokenizer
+# from Dataset import CustomDataset
+from ..tokenizer.gpt import RegexTokenizer
 import torch.multiprocessing as mp
-
 import pickle
-from tqdm import tqdm
-import pandas as pd
-
 
 tokenizer_path = './tokenizer/models/nolan/gpt.model'
 batch_size = 8 # how many independent sequences will we process in parallel?
@@ -22,14 +18,13 @@ block_size = 512 # what is the maximum context length for predictions?
 eval_interval = 500
 learning_rate = 3e-4
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
-# eval_iters = 250
+eval_iters = 250
 n_embd = 64
 n_head = 6
 n_layer = 6
 dropout = 0.2 
 checkpoint_steps = 5000
 vocab_size = 10002
-
 
 class Head(nn.Module):
     """ one head of self-attention """
@@ -166,144 +161,25 @@ class GPTLanguageModel(nn.Module):
             idx = torch.cat((idx, idx_next), dim=1) # (B, T+1)
         return idx
 
-print('Loading Dataset')
-DATA = pd.read_csv('./data/tokenized_data_v3.csv',sep='|')
-# DATA = DATA[:1000]
-DATA['X'] = DATA['X'].apply(json.loads)
-DATA['y'] = DATA['y'].apply(json.loads)
-
-# DATA = DATA[:64]
-print('Loading Tokenzier')
-tokenizer = RegexTokenizer()
-tokenizer.load(tokenizer_path)
-special_tokens = {
-    '<eos>' : 10000,
-    '<pad>': 10001
-}
-tokenizer.register_special_tokens(special_tokens)
-
-
-
-print('Train Test Split')
-TRAIN_DATA,VAL_DATA = train_test_split(DATA,test_size=0.3,shuffle=True, random_state=42)
-
-print('Custom Dataset')
-train_dataset = CustomDataset(TRAIN_DATA, tokenizer, max_length=block_size)
-val_dataset = CustomDataset(VAL_DATA, tokenizer, block_size)
-
-def collate_fn(batch):
-    # Separate the input and target sequences
-    input_ids, target_ids = zip(*batch)
-    
-    # Pad the sequences
-    input_ids_padded = pad_sequence(input_ids, batch_first=True, padding_value=special_tokens['<pad>'])
-    target_ids_padded = pad_sequence(target_ids, batch_first=True, padding_value=special_tokens['<pad>'])
-    
-    return input_ids_padded, target_ids_padded
-
-print('DataLoader')
-torch.set_num_threads(10)
-train_dataloader = DataLoader(train_dataset,batch_size=batch_size, shuffle=True,collate_fn=collate_fn)
-val_dataloader = DataLoader(val_dataset,batch_size=batch_size, shuffle=True,collate_fn=collate_fn)    
-
-TOTAL_ITERATION = len(train_dataloader)
-del DATA,TRAIN_DATA,VAL_DATA
-eval_iters = 2000
-
-@torch.no_grad()
-def estimate_loss(model,eval_iters):
-    counter = 0
-    out = {}
-    model.eval()
-    
-    
-    losses = torch.zeros(eval_iters)
-    
-    for split in ['train','val']:
-        if split == 'val':
-            k = 0
-            
-            for input_batch, target_batch in tqdm(val_dataloader, total=eval_iters, desc=f"Estimating loss for val"):
-                if k==eval_iters:
-                    break
-                logits , loss = model(input_batch,target_batch)
-                losses[k] = loss.item()
-                k+=1
-                
-
-            out[split] = losses.mean()
-        else:
-            k = 0
-            for input_batch, target_batch in tqdm(train_dataloader, total=eval_iters, desc=f"Estimating loss for train"):
-                if k==eval_iters:
-                    break
-                logits , loss = model(input_batch,target_batch)
-                losses[k] = loss.item()
-                k+=1
-
-            out[split] = losses.mean()
-    model.train()
-    
-    return out
-
-
-def train_epoch(epoch,iter):
-    losses = {}
-    iter = 0 if epoch==0 else iter
-    # print(train_dataloader.is_cuda)
-    for input_batch,target_batch in tqdm(train_dataloader, total=TOTAL_ITERATION, desc=f"Training {epoch+1}"):
-        # print(f'Batch {iter+1}')
-        
-    
-        logits,loss  = model(input_batch,target_batch)
-        optimizer.zero_grad(set_to_none=True)
-        loss.backward()
-        optimizer.step()      
-        iter+=1
-        # losses['train'] = train_loss.mean()
-        if iter % (TOTAL_ITERATION/2) == 0 :
-            losses = estimate_loss(model,eval_iters)
-            print(f"step {iter}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
-    
-        if (iter) % checkpoint_steps == 0:
-            with open(f'./checkpoints/chkpt_{iter+1}.pkl','wb') as f:
-                pickle.dump(model,f)
-            print('Checkpoints Saved')
-
-
-def train(model):
-    EPOCHS = 200
-    iter = 0
-
-    for epoch in range(EPOCHS):
-        # print('In the training loop')
-        # print(F'********** EPOCH {epoch} ***********')
-        train_epoch(epoch,iter)
-        
-        
-
 if __name__ == "__main__":
-    print("Loading Model")
-    model = GPTLanguageModel()
-    model = model.to(device)
+    # model = GPTLanguageModel()
+    # model = model.to(device)
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
-    train(model)
+    checkpoint_path = './checkpoints/chkpt_15001.pkl'
+    with open(checkpoint_path, 'rb') as f:
+        model = pickle.load(f)
+
+    model.to(device)
+    print("Model loaded successfully from", checkpoint_path)
     
-    # num_process = 4
-    # print('Model Sharing')
-    # # model.share_memory()
-    # print('Model sharing complete')
-    # EPOCHS = 10
-    # Multi Processing
-    # processes = []
-    # for rank in range(num_process):
-    #     print('In the loop')
-    #     p = mp.Process(target=train,args=(model,))
-    #     p.start()
-    #     processes.append(p)
-    
-    # for p in processes:
-    #     p.join()
-    # train(model)
-    
+    path = './tokenizer/models/nolan/gpt.model'
+    tokenizer = RegexTokenizer()
+    tokenizer.load(path)
+
+    prompt = 'Who is Christopher'
+    input_tokens = tokenizer.encode(prompt)
+
+    context = torch.tensor(input_tokens,dtype=torch.long,device = device)
+    output = model.generate(context.unsqueeze(0),max_new_tokens =70)[0].tolist()
+    print(output[0])
+    print(tokenizer.decode(output))

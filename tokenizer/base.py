@@ -1,86 +1,51 @@
+"""
+Contains the base Tokenizer class and a few common helper functions.
+The base class also contains the (common) save/load functionality.
+It would be possible to be a lot more strict about the interface and
+e.g. isolating all regex/pattern parts to the RegexTokenizer, but
+some concessions are made for simplicity.
+"""
 import unicodedata
-# from torch import Tensor
-import torch
-# from typing import *
 
-def get_stats(ids,count = None):
-    '''
-    Example = [1,2,3,1,2]  -> {(1,2) -> 2, (2,3)-> 1, (3,1) -> 1 }
-    '''
-    counts = {} if count is None else count
-    
-    for pair in zip(ids,ids[1:]):
-        counts[pair] = counts.get(pair,0) + 1
-    
+# -----------------------------------------------------------------------------
+# a few helper functions useful for both BasicTokenizer and RegexTokenizer
+
+def get_stats(ids, counts=None):
+    """
+    Given a list of integers, return a dictionary of counts of consecutive pairs
+    Example: [1, 2, 3, 1, 2] -> {(1, 2): 2, (2, 3): 1, (3, 1): 1}
+    Optionally allows to update an existing dictionary of counts
+    """
+    counts = {} if counts is None else counts
+    for pair in zip(ids, ids[1:]): # iterate consecutive elements
+        counts[pair] = counts.get(pair, 0) + 1
     return counts
 
 
-def merge_orignial(ids,pair,idx):
-    '''
-    In the list of integers(ids), replace all consecutive occurrence 
-    of pair with a new token idx
-    Example: id = [1,2,3,1,2]
-    so let the pair be (1,2), replacing it with new id as 4 which is idx.
-    therefore, new id - [4,3,4]
-    '''
+def merge(ids, pair, idx):
+    """
+    In the list of integers (ids), replace all consecutive occurrences
+    of pair with the new integer token idx
+    Example: ids=[1, 2, 3, 1, 2], pair=(1, 2), idx=4 -> [4, 3, 4]
+    """
     newids = []
     i = 0
-    
     while i < len(ids):
-        if ids[i] == pair[0] and i < len(ids)-1  and ids[i+1] == pair[1]:
+        # if not at the very last position AND the pair matches, replace it
+        if ids[i] == pair[0] and i < len(ids) - 1 and ids[i+1] == pair[1]:
             newids.append(idx)
-            i+=2
+            i += 2
         else:
             newids.append(ids[i])
-            i+=1
-    
+            i += 1
     return newids
 
-def merge(ids, pair,idx:int):
-    '''
-    In the list of integers(ids), replace all consecutive occurrence 
-    of pair with a new token idx
-    Example: id = [1,2,3,1,2]
-    so let the pair be (1,2), replacing it with new id as 4 which is idx.
-    therefore, new id - [4,3,4]
-    '''
-    
-    # create a mask for the first element i of every matching pair (i,j)
-    pairs = torch.stack((ids[:-1],ids[1:]),dim =1)
-    is_pair = (pairs == pair).all(axis=1)
-    false_tensor = torch.tensor([False],dtype = torch.bool, device = ids.device)
-    is_pair_i = torch.cat((is_pair,false_tensor))
-    
-    # create a mask for the second element j of every matching pair(i,j)
-    
-    is_pair_j = is_pair_i.roll(1)
-    
-    # handle overlapping pairs for repeated tokens
-    
-    while True:
-        is_overlap = (is_pair_i & is_pair_j).any()
-        if not is_overlap:
-            break
-        
-        # remove first overlapping pairs in repeated sequences
-        is_first = (is_pair_i & is_pair_j).int().diff() == 1
-        is_first = torch.cat((false_tensor, is_first))
-        is_pair_i &= ~is_first
-        is_pair_j = is_pair_i.roll(1)
-    
-    # change the first element i of every matching pair (i, j) to the new token
-    ids[is_pair_i] = idx
-
-    # remove the second element j of every matching pair (i, j)
-    ids = ids[~is_pair_j]
-    return ids 
-    
-def replace_control_characters(s:str)-> str:
-    '''
-    we don't want to print control characters
-    which distort the output (e.g. \n or much worse)
-    '''
-    
+# first two helper functions...
+def replace_control_characters(s: str) -> str:
+    # we don't want to print control characters
+    # which distort the output (e.g. \n or much worse)
+    # https://stackoverflow.com/questions/4324790/removing-control-characters-from-a-string-in-python/19016117#19016117
+    # http://www.unicode.org/reports/tr44/#GC_Values_Table
     chars = []
     for ch in s:
         if unicodedata.category(ch)[0] != "C":
@@ -89,69 +54,71 @@ def replace_control_characters(s:str)-> str:
             chars.append(f"\\u{ord(ch):04x}") # escape
     return "".join(chars)
 
-def render_token(t: bytes)->str:
+def render_token(t: bytes) -> str:
     # pretty print a token, escaping control characters
-    s = t.decode('utf-8',errors = 'replace')
+    s = t.decode('utf-8', errors='replace')
     s = replace_control_characters(s)
     return s
 
-
-# ---------------------------------------------------------------------------
-# The base Tokenizer
+# -----------------------------------------------------------------------------
+# the base Tokenizer class
 
 class Tokenizer:
-    
+    """Base class for Tokenizers"""
+
     def __init__(self):
-        # default: vocab size of 256 (all bytes), no merges, no pattern
-        self.merges = {} # (int,int) -> int
+        # default: vocab size of 256 (all bytes), no merges, no patterns
+        self.merges = {} # (int, int) -> int
         self.pattern = "" # str
-        self.special_tokens = {} # str -> int , eg. {'<|endoftext|>' : 120325}
+        self.special_tokens = {} # str -> int, e.g. {'<|endoftext|>': 100257}
         self.vocab = self._build_vocab() # int -> bytes
-        
-    
-    def train(self, text, vocab_size, verbose = False):
-        
+
+    def train(self, text, vocab_size, verbose=False):
+        # Tokenizer can train a vocabulary of size vocab_size from text
         raise NotImplementedError
-    
+
     def encode(self, text):
-        
+        # Tokenizer can encode a string into a list of integers
         raise NotImplementedError
-    
+
     def decode(self, ids):
-        
+        # Tokenizer can decode a list of integers into a string
         raise NotImplementedError
-    
+
     def _build_vocab(self):
         # vocab is simply and deterministically derived from merges
-        
         vocab = {idx: bytes([idx]) for idx in range(256)}
-        
-        for (p0,p1),idx in self.merges.items():
+        for (p0, p1), idx in self.merges.items():
             vocab[idx] = vocab[p0] + vocab[p1]
-        
-        for special,idx in self.special_tokens.items():
-            vocab[idx] = special.encode("utf-8") # encoding=utf-8
-    
+        for special, idx in self.special_tokens.items():
+            vocab[idx] = special.encode("utf-8")
         return vocab
 
     def save(self, file_prefix):
-        
-        model_file = file_prefix + '.model'
-        with open(model_file,'w') as f:
-            
-            f.write("tokenizer v1\n")
-            f.write(f'{self.pattern}\n')
-            f.write(f'{len(self.special_tokens)}\n')
-            for special,idx in self.special_tokens.items():
-                f.write(f"{special}, {idx}\n")
-            
-            for idx1,idx2 in self.merges:
+        """
+        Saves two files: file_prefix.vocab and file_prefix.model
+        This is inspired (but not equivalent to!) sentencepiece's model saving:
+        - model file is the critical one, intended for load()
+        - vocab file is just a pretty printed version for human inspection only
+        """
+        # write the model: to be used in load() later
+        model_file = file_prefix + ".model"
+        with open(model_file, 'w') as f:
+            # write the version, pattern and merges, that's all that's needed
+            f.write("minbpe v1\n")
+            f.write(f"{self.pattern}\n")
+            # write the special tokens, first the number of them, then each one
+            f.write(f"{len(self.special_tokens)}\n")
+            for special, idx in self.special_tokens.items():
+                f.write(f"{special} {idx}\n")
+            # the merges dict
+            for idx1, idx2 in self.merges:
                 f.write(f"{idx1} {idx2}\n")
-        
-        vocab_file = file_prefix + ".vocab"                
-        inverted_merges = {idx:pair for pair,idx in self.merges.items()}
-        with open(vocab_file,'w') as f:
-            for idx,token in self.vocab.items():
+        # write the vocab: for the human to look at
+        vocab_file = file_prefix + ".vocab"
+        inverted_merges = {idx: pair for pair, idx in self.merges.items()}
+        with open(vocab_file, "w", encoding="utf-8") as f:
+            for idx, token in self.vocab.items():
                 # note: many tokens may be partial utf-8 sequences
                 # and cannot be decoded into valid strings. Here we're using
                 # errors='replace' to replace them with the replacement char �.
@@ -169,7 +136,7 @@ class Tokenizer:
                     # otherwise this is leaf token, just print it
                     # (this should just be the first 256 tokens, the bytes)
                     f.write(f"[{s}] {idx}\n")
-    
+
     def load(self, model_file):
         """Inverse of save() but only for the model file"""
         assert model_file.endswith(".model")

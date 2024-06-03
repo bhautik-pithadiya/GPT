@@ -1,6 +1,16 @@
 # NOTE: This file was automatically generated from:
 # /home/ksuser/Bhautik/GPT/tokenizer/gpt.py
-# DO NOT CHANGE DIRECTLY! 1715778989.3855264
+# DO NOT CHANGE DIRECTLY! 1716206110.1299794
+"""
+Minimal (byte-level) Byte Pair Encoding tokenizer.
+
+Algorithmically follows along the GPT tokenizer:
+https://github.com/openai/gpt-2/blob/master/src/encoder.py
+
+Unlike BasicTokenizer:
+- RegexTokenizer handles an optional regex splitting pattern.
+- RegexTokenizer handles optional special tokens.
+"""
 import regex as re
 try:
     (Tokenizer,) = ultraimport('__dir__/base/__init__.py', objects_to_import=('Tokenizer',), recurse=True)
@@ -8,39 +18,31 @@ except ultraimport.ResolveImportError as e:
     try:
         (Tokenizer,) = ultraimport('__dir__/base.py', objects_to_import=('Tokenizer',), recurse=True)
     except ultraimport.ResolveImportError as e2:
-        raise ultraimport.RewrittenImportError(code_info=('from .base import Tokenizer, get_stats, merge, merge_orignial', '/home/ksuser/Bhautik/GPT/tokenizer/gpt.py', 2, 0), object_to_import='Tokenizer', combine=[e, e2]) from None
+        raise ultraimport.RewrittenImportError(code_info=('from .base import Tokenizer, get_stats, merge', '/home/ksuser/Bhautik/GPT/tokenizer/gpt.py', 13, 0), object_to_import='Tokenizer', combine=[e, e2]) from None
 try:
     (get_stats,) = ultraimport('__dir__/base/__init__.py', objects_to_import=('get_stats',), recurse=True)
 except ultraimport.ResolveImportError as e:
     try:
         (get_stats,) = ultraimport('__dir__/base.py', objects_to_import=('get_stats',), recurse=True)
     except ultraimport.ResolveImportError as e2:
-        raise ultraimport.RewrittenImportError(code_info=('from .base import Tokenizer, get_stats, merge, merge_orignial', '/home/ksuser/Bhautik/GPT/tokenizer/gpt.py', 2, 0), object_to_import='get_stats', combine=[e, e2]) from None
+        raise ultraimport.RewrittenImportError(code_info=('from .base import Tokenizer, get_stats, merge', '/home/ksuser/Bhautik/GPT/tokenizer/gpt.py', 13, 0), object_to_import='get_stats', combine=[e, e2]) from None
 try:
     (merge,) = ultraimport('__dir__/base/__init__.py', objects_to_import=('merge',), recurse=True)
 except ultraimport.ResolveImportError as e:
     try:
         (merge,) = ultraimport('__dir__/base.py', objects_to_import=('merge',), recurse=True)
     except ultraimport.ResolveImportError as e2:
-        raise ultraimport.RewrittenImportError(code_info=('from .base import Tokenizer, get_stats, merge, merge_orignial', '/home/ksuser/Bhautik/GPT/tokenizer/gpt.py', 2, 0), object_to_import='merge', combine=[e, e2]) from None
-try:
-    (merge_orignial,) = ultraimport('__dir__/base/__init__.py', objects_to_import=('merge_orignial',), recurse=True)
-except ultraimport.ResolveImportError as e:
-    try:
-        (merge_orignial,) = ultraimport('__dir__/base.py', objects_to_import=('merge_orignial',), recurse=True)
-    except ultraimport.ResolveImportError as e2:
-        raise ultraimport.RewrittenImportError(code_info=('from .base import Tokenizer, get_stats, merge, merge_orignial', '/home/ksuser/Bhautik/GPT/tokenizer/gpt.py', 2, 0), object_to_import='merge_orignial', combine=[e, e2]) from None
-import torch
+        raise ultraimport.RewrittenImportError(code_info=('from .base import Tokenizer, get_stats, merge', '/home/ksuser/Bhautik/GPT/tokenizer/gpt.py', 13, 0), object_to_import='merge', combine=[e, e2]) from None
 GPT2_SPLIT_PATTERN = "'(?:[sdmt]|ll|ve|re)| ?\\p{L}+| ?\\p{N}+| ?[^\\s\\p{L}\\p{N}]+|\\s+(?!\\S)|\\s+"
 GPT4_SPLIT_PATTERN = "'(?i:[sdmt]|ll|ve|re)|[^\\r\\n\\p{L}\\p{N}]?+\\p{L}+|\\p{N}{1,3}| ?[^\\s\\p{L}\\p{N}]++[\\r\\n]*|\\s*[\\r\\n]|\\s+(?!\\S)|\\s+"
 
-class GptTokenizer(Tokenizer):
+class RegexTokenizer(Tokenizer):
 
     def __init__(self, pattern=None):
         """
         - pattern: optional string to override the default (GPT-4 split pattern)
         - special_tokens: str -> int dictionary of special tokens
-            example: {'<|endoftext|>': 100257}
+          example: {'<|endoftext|>': 100257}
         """
         super().__init__()
         self.pattern = GPT4_SPLIT_PATTERN if pattern is None else pattern
@@ -61,7 +63,7 @@ class GptTokenizer(Tokenizer):
                 get_stats(chunk_ids, stats)
             pair = max(stats, key=stats.get)
             idx = 256 + i
-            ids = [merge_orignial(chunk_ids, pair, idx) for chunk_ids in ids]
+            ids = [merge(chunk_ids, pair, idx) for chunk_ids in ids]
             merges[pair] = idx
             vocab[idx] = vocab[pair[0]] + vocab[pair[1]]
             if verbose:
@@ -75,8 +77,7 @@ class GptTokenizer(Tokenizer):
 
     def decode(self, ids):
         part_bytes = []
-        ids_list = ids.tolist()
-        for idx in ids_list:
+        for idx in ids:
             if idx in self.vocab:
                 part_bytes.append(self.vocab[idx])
             elif idx in self.inverse_special_tokens:
@@ -87,37 +88,28 @@ class GptTokenizer(Tokenizer):
         text = text_bytes.decode('utf-8', errors='replace')
         return text
 
-    def pre_encode(self, text):
-        text_chunks = re.findall(self.compiled_pattern, text)
-        chunks = [chunk.encode('utf-8') for chunk in text_chunks]
-        return chunks
+    def _encode_chunk(self, text_bytes):
+        ids = list(text_bytes)
+        while len(ids) >= 2:
+            stats = get_stats(ids)
+            pair = min(stats, key=lambda p: self.merges.get(p, float('inf')))
+            if pair not in self.merges:
+                break
+            idx = self.merges[pair]
+            ids = merge(ids, pair, idx)
+        return ids
 
     def encode_ordinary(self, text):
         """Encoding that ignores any special tokens."""
-        chunks = self.pre_encode(text)
-        int_type = torch.int16 if len(self.merges) <= 2 ** 15 else torch.int32
-        device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        ids = [list(chunk_bytes) for chunk_bytes in chunks]
-        if len(self.merges) == 0:
-            return sum(ids, [])
-        merges = sorted(list(self.merges), key=lambda p: self.merges[p])
-        merges = torch.tensor(merges, dtype=int_type, device=device)
-        for (i, chunk_ids) in enumerate(ids):
-            chunk_ids = torch.tensor(chunk_ids, dtype=int_type, device=device)
-            while len(chunk_ids) >= 2:
-                pairs = torch.stack((chunk_ids[:-1], chunk_ids[1:]), dim=1)
-                unique = torch.unique(pairs, dim=0)
-                is_present = (merges[:, None] == unique[None]).all(-1).any(-1)
-                if not is_present.any():
-                    break
-                pair_index = is_present.nonzero()[0]
-                pair = merges[pair_index]
-                idx = pair_index.to(chunk_ids.dtype) + 256
-                chunk_ids = merge(chunk_ids, pair, idx)
-            ids[i] = chunk_ids.cpu().tolist()
-        return sum(ids, [])
+        text_chunks = re.findall(self.compiled_pattern, text)
+        ids = []
+        for chunk in text_chunks:
+            chunk_bytes = chunk.encode('utf-8')
+            chunk_ids = self._encode_chunk(chunk_bytes)
+            ids.extend(chunk_ids)
+        return ids
 
-    def encode(self, text, allowed_special='all'):
+    def encode(self, text, allowed_special='none_raise'):
         """
         Unlike encode_ordinary, this function handles special tokens.
         allowed_special: can be "all"|"none"|"none_raise" or a custom set of special tokens

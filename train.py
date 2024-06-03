@@ -10,7 +10,7 @@ import pickle
 from sklearn.model_selection import train_test_split
 from transformer.transformer import GPTLanguageModel
 from tokenizer.gpt import GptTokenizer
-from tokenizer.Dataset import CustomDataset
+from Dataset import CustomDataset
 
 print('****** Loading Dataset *********')
 DATA = pd.read_csv('./data/dataset_v2.csv')

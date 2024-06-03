@@ -1,19 +1,31 @@
-import regex as re
-from .base import Tokenizer, get_stats, merge,merge_orignial
-import torch
-# from torch import Tensor
+"""
+Minimal (byte-level) Byte Pair Encoding tokenizer.
 
+Algorithmically follows along the GPT tokenizer:
+https://github.com/openai/gpt-2/blob/master/src/encoder.py
+
+Unlike BasicTokenizer:
+- RegexTokenizer handles an optional regex splitting pattern.
+- RegexTokenizer handles optional special tokens.
+"""
+
+import regex as re
+from .base import Tokenizer, get_stats, merge
+
+
+# the main GPT text split patterns, see
+# https://github.com/openai/tiktoken/blob/main/tiktoken_ext/openai_public.py
 GPT2_SPLIT_PATTERN = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
 GPT4_SPLIT_PATTERN = r"""'(?i:[sdmt]|ll|ve|re)|[^\r\n\p{L}\p{N}]?+\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]++[\r\n]*|\s*[\r\n]|\s+(?!\S)|\s+"""
 
 
-class GptTokenizer(Tokenizer):
+class RegexTokenizer(Tokenizer):
 
     def __init__(self, pattern=None):
         """
         - pattern: optional string to override the default (GPT-4 split pattern)
         - special_tokens: str -> int dictionary of special tokens
-            example: {'<|endoftext|>': 100257}
+          example: {'<|endoftext|>': 100257}
         """
         super().__init__()
         self.pattern = GPT4_SPLIT_PATTERN if pattern is None else pattern
@@ -33,7 +45,7 @@ class GptTokenizer(Tokenizer):
 
         # iteratively merge the most common pairs to create new tokens
         merges = {} # (int, int) -> int
-        vocab = {idx: (bytes([idx])) for idx in range(256)} # idx -> bytes
+        vocab = {idx: bytes([idx]) for idx in range(256)} # idx -> bytes
         for i in range(num_merges):
             # count the number of times every consecutive pair appears
             stats = {}
@@ -45,7 +57,7 @@ class GptTokenizer(Tokenizer):
             # mint a new token: assign it the next available id
             idx = 256 + i
             # replace all occurrences of pair in ids with idx
-            ids = [merge_orignial(chunk_ids, pair, idx) for chunk_ids in ids]
+            ids = [merge(chunk_ids, pair, idx) for chunk_ids in ids]
             # save the merge
             merges[pair] = idx
             vocab[idx] = vocab[pair[0]] + vocab[pair[1]]
@@ -66,9 +78,7 @@ class GptTokenizer(Tokenizer):
     def decode(self, ids):
         # given ids (list of integers), return Python string
         part_bytes = []
-        ids_list= ids.tolist()
-        for idx in ids_list:
-            
+        for idx in ids:
             if idx in self.vocab:
                 part_bytes.append(self.vocab[idx])
             elif idx in self.inverse_special_tokens:
@@ -79,70 +89,38 @@ class GptTokenizer(Tokenizer):
         text = text_bytes.decode("utf-8", errors="replace")
         return text
 
-    # def _encode_chunk(self, text_bytes):
-    #     # return the token ids
-    #     # let's begin. first, convert all bytes to integers in range 0..255
-    #     ids = list(text_bytes)
-    #     while len(ids) >= 2:
-    #         # find the pair with the lowest merge index
-    #         stats = get_stats(ids)
-    #         pair = min(stats, key=lambda p: self.merges.get(p, float("inf")))
-    #         # subtle: if there are no more merges available, the key will
-    #         # result in an inf for every single pair, and the min will be
-    #         # just the first pair in the list, arbitrarily
-    #         # we can detect this terminating case by a membership check
-    #         if pair not in self.merges:
-    #             break # nothing else can be merged anymore
-    #         # otherwise let's merge the best pair (lowest merge index)
-    #         idx = self.merges[pair]
-    #         ids = merge(ids, pair, idx)
-    #     return ids
-    
-    def pre_encode(self, text):
-        # split text into chunks of text by categories defined in regex pattern
-        text_chunks = re.findall(self.compiled_pattern, text)
-        chunks = [chunk.encode("utf-8") for chunk in text_chunks]
-        return chunks
-    
+    def _encode_chunk(self, text_bytes):
+        # return the token ids
+        # let's begin. first, convert all bytes to integers in range 0..255
+        ids = list(text_bytes)
+        while len(ids) >= 2:
+            # find the pair with the lowest merge index
+            stats = get_stats(ids)
+            pair = min(stats, key=lambda p: self.merges.get(p, float("inf")))
+            # subtle: if there are no more merges available, the key will
+            # result in an inf for every single pair, and the min will be
+            # just the first pair in the list, arbitrarily
+            # we can detect this terminating case by a membership check
+            if pair not in self.merges:
+                break # nothing else can be merged anymore
+            # otherwise let's merge the best pair (lowest merge index)
+            idx = self.merges[pair]
+            ids = merge(ids, pair, idx)
+        return ids
 
     def encode_ordinary(self, text):
         """Encoding that ignores any special tokens."""
         # split text into chunks of text by categories defined in regex pattern
-        chunks = self.pre_encode(text)
+        text_chunks = re.findall(self.compiled_pattern, text)
         # all chunks of text are encoded separately, then results are joined
-        int_type = torch.int16 if len(self.merges) <= 2**15 else torch.int32
-        
-        device = "cuda" if torch.cuda.is_available() else 'cpu'
-        ids = [list(chunk_bytes) for chunk_bytes in chunks]
-        
-        if len(self.merges) == 0:
-            return sum(ids,[])
-        
-        merges = sorted(list(self.merges), key = lambda p : self.merges[p])
-        merges = torch.tensor(merges,dtype=int_type,device=device)
-        
-        for i,chunk_ids in enumerate(ids):
-            chunk_ids = torch.tensor(chunk_ids, dtype=int_type, device=device)
-            while len(chunk_ids)>=2:
-                
-                # find the pair with the lowest merge index
-                pairs = torch.stack((chunk_ids[:-1], chunk_ids[1:]),dim=1)
-                unique = torch.unique(pairs,dim=0)
-                
-                is_present = (merges[:,None] == unique[None]).all(-1).any(-1)
-                if not is_present.any():
-                    break
-                
-                pair_index = is_present.nonzero()[0]
-                pair = merges[pair_index]
-                idx = pair_index.to(chunk_ids.dtype) + 256
-                chunk_ids = merge(chunk_ids,pair, idx)
-            
-            ids[i] = chunk_ids.cpu().tolist()
-        return sum(ids,[])
-    
-    
-    def encode(self, text, allowed_special="all"):
+        ids = []
+        for chunk in text_chunks:
+            chunk_bytes = chunk.encode("utf-8") # raw bytes
+            chunk_ids = self._encode_chunk(chunk_bytes)
+            ids.extend(chunk_ids)
+        return ids
+
+    def encode(self, text, allowed_special="none_raise"):
         """
         Unlike encode_ordinary, this function handles special tokens.
         allowed_special: can be "all"|"none"|"none_raise" or a custom set of special tokens

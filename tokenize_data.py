@@ -6,8 +6,8 @@ import torch
 import json
 
 # Load and set up the tokenizer
-GptTokenizer = ultraimport('tokenizer/gpt.py', 'GptTokenizer', recurse=True)
-tokenizer = GptTokenizer()
+from tokenizer.gpt import RegexTokenizer
+tokenizer = RegexTokenizer()
 tokenizer.load('./tokenizer/models/nolan/gpt.model')
 special_tokens = {'<eos>': 10000, '<pad>': 10001}
 tokenizer.register_special_tokens(special_tokens)
@@ -40,13 +40,16 @@ num_processes = 11
 
 # Create a new DataFrame to store tokenized data
 tokenized_data = pd.DataFrame(columns=["X", "y", "index"])
-
+tqdm.pandas()
 # Define a function for parallel tokenization
 def tokenize_chunk(chunk):
     tokenized_chunk = pd.DataFrame(columns=["X", "y", "index"])
     # temp = pd.DataFrame(columns=["combined", "index"])
-    # print(chunk['Text'].apply(tokenize_data))
-    tokenized_chunk['X'],tokenized_chunk['y'] = chunk['Text'].apply(tokenize_data)
+    # print(chunk['Text'].apply(tokenize_data)[0])
+    # tokenized_chunk['X'],tokenized_chunk['y'] = chunk['Text'].apply(tokenize_data)
+    tokenized_results = chunk['Text'].progress_apply(tokenize_data).apply(pd.Series)
+    tokenized_chunk['X'] = tokenized_results[0]
+    tokenized_chunk['y'] = tokenized_results[1]
     
     tokenized_chunk['index'] = chunk['index']
     # print(tokenize_chunk['X'][0],tokenize_chunk['Y'][0])
@@ -78,4 +81,4 @@ tokenized_data['y'] = tokenized_data['y'].apply(json.dumps)
 
 # Save the tokenized data
 print('Saving Data')
-tokenized_data.to_csv('./data/tokenized_data_v3.csv', index=False)
+tokenized_data.to_csv('./data/tokenized_data_v3.csv', index=False,sep ='|')
