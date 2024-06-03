@@ -36,7 +36,7 @@ DATA = DATA
 DATA['index'] = DATA.index
 
 # Define the number of processes
-num_processes = 11
+num_processes = 47
 
 # Create a new DataFrame to store tokenized data
 tokenized_data = pd.DataFrame(columns=["X", "y", "index"])
